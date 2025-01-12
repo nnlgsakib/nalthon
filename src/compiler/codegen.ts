@@ -47,7 +47,7 @@ inputs: fn.parameters.map(p => ({
 name: p.name,
 type: p.typeName
 })),
-outputs: fn.returnType ? [{ name: "ret", type: fn.returnType }] : []
+outputs: fn.returnType ? [{ name: "return", type: fn.returnType }] : []
 });
 }
 }
