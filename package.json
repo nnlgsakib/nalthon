@@ -17,7 +17,7 @@
     "typescript",
     "nalthon"
   ],
-  "author": "Your Name",
+  "author": "nnlgsakib",
   "license": "MIT",
   "dependencies": {
     "commander": "^9.4.1",
