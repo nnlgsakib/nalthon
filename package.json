@@ -1,7 +1,7 @@
 {
   "name": "nalthon",
   "version": "1.0.0",
-  "description": "Nalthon - A production-ready Ethereum smart contract language in TypeScript",
+  "description": "Nalthon - An experimental Ethereum smart contract language in TypeScript",
   "main": "dist/cli.js",
   "scripts": {
     "build": "tsc",
