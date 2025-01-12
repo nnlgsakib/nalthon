@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { Command } from "commander";
 import { compileFile } from "./index";
 
@@ -5,7 +6,7 @@ const program = new Command();
 
 program
   .name("nalthon")
-  .description("Nalthon - A Production-Ready Ethereum Smart Contract Compiler in TypeScript")
+  .description("Nalthon - An experimental Ethereum Smart Contract Compiler in TypeScript")
   .version("1.0.0");
 
 program
