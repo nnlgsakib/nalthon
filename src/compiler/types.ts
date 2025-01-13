@@ -34,6 +34,7 @@ export enum TokenType {
     LessThan = "LessThan", // <
     GreaterThan = "GreaterThan", // >
     Question = "Question", // ?
+    Not = "Not", // !
   
     // Keywords
     Contract = "Contract",

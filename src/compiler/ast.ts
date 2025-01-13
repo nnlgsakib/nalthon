@@ -116,7 +116,7 @@ export interface MemberAccess {
 }
 
 export interface Expression {
-  type: "Literal" | "Identifier" | "BinaryOp" | "UnaryOp" | "FunctionCall" | "MemberAccess" | "TernaryOp"| "BitwiseOp"|"LogicalOp" | "IndexAccess" | "ExpressionStatement" | "Tuple";
+  type: "Literal" | "Identifier" | "BinaryOp" | "UnaryOp" | "FunctionCall" | "MemberAccess" | "TernaryOp"| "BitwiseOp"|"LogicalOp" | "IndexAccess" | "ExpressionStatement" | "Tuple" | "ArrayLiteral";
   value?: any;
   left?: Expression;
   operator?: string;

@@ -231,6 +231,16 @@ function checkExpression(expr: Expression): void {
         }
         expr.elements.forEach(element => checkExpression(element)); // Check all elements in the tuple
         break;
+        case "ArrayLiteral":
+          if (!expr.elements) {
+            throw new CompileError(`Invalid array literal`, 0, 0);
+          }
+          // Allow empty arrays in valid contexts like variable resets
+          if (expr.elements.length === 0) {
+            return; // Empty arrays are valid in this context
+          }
+          expr.elements.forEach(element => checkExpression(element)); // Check all elements in the array
+          break;
     default:
       throw new CompileError(`Unsupported expression type: '${expr.type}'`, 0, 0);
   }
@@ -262,6 +272,12 @@ function checkValidType(typeName: string): void {
   }
   if (typeName.startsWith("mapping(") && typeName.endsWith(")")) {
     return;
+  }
+  if (typeName.endsWith("[]")) {
+    const baseType = typeName.slice(0, -2); // Remove the "[]" suffix to check the base type
+    if (ALLOWED_BASE_TYPES.has(baseType)) {
+      return;
+    }
   }
   throw new CompileError(`Unknown or unsupported type '${typeName}'`, 0, 0);
 }
