@@ -1,3 +1,4 @@
+
 import { tokenize } from "./lexer";
 import { Token, TokenType } from "./types";
 import {
@@ -67,12 +68,50 @@ export function parse(source: string): Program {
     consume(TokenType.En);
     return { name: contractName, stateVars, functions };
   }
-
   function parseStateVar(): VariableDeclaration {
     const nameToken = consume(TokenType.Identifier);
+  
     consume(TokenType.Colon);
-    const typeToken = consume(TokenType.Identifier);
-
+  
+    // Recursive function to parse mappings
+    function parseMapping(): string {
+      consume(TokenType.Identifier); // Consume 'mapping'
+      consume(TokenType.OpenParen); // Consume '('
+  
+      // Parse key type
+      const keyType = consume(TokenType.Identifier).value;
+  
+      // Handle separator (either '->' or ',')
+      let separatorToken = consume();
+      if (separatorToken.type !== TokenType.Arrow && separatorToken.type !== TokenType.Comma) {
+        throw new CompileError(
+          `Expected token 'Arrow' or 'Comma', got '${separatorToken.type}' at line ${separatorToken.line}, column ${separatorToken.column}`,
+          separatorToken.line,
+          separatorToken.column
+        );
+      }
+  
+      // Parse value type: check if the value type is another mapping
+      let valueType: string;
+      if (peek().type === TokenType.Identifier && peek().value === "mapping") {
+        valueType = parseMapping(); // Recursively parse nested mapping
+      } else {
+        valueType = consume(TokenType.Identifier).value;
+      }
+  
+      consume(TokenType.CloseParen); // Consume ')'
+  
+      return `mapping(${keyType} ${separatorToken.value} ${valueType})`;
+    }
+  
+    // Check if the variable is a mapping
+    let typeName: string;
+    if (peek().type === TokenType.Identifier && peek().value === "mapping") {
+      typeName = parseMapping();
+    } else {
+      typeName = consume(TokenType.Identifier).value; // Regular type
+    }
+  
     let storageLocation: "memory" | "storage" | undefined;
     if (peek().type === TokenType.Memory) {
       consume(TokenType.Memory);
@@ -81,11 +120,14 @@ export function parse(source: string): Program {
       consume(TokenType.Storage);
       storageLocation = "storage";
     }
-
+  
     if (peek().type === TokenType.Semicolon) consume(TokenType.Semicolon);
-
-    return { name: nameToken.value, typeName: typeToken.value, storageLocation };
+  
+    return { name: nameToken.value, typeName, storageLocation };
   }
+  
+  
+  
 
   function parseFunction(): FunctionDefinition {
     consume(TokenType.Def);
@@ -146,22 +188,7 @@ export function parse(source: string): Program {
     return { name: fnName, parameters, returnType, isPayable, isView, isPure, isOnlyOwner, body };
   }
 
-  function parseStatement(): Statement {
-    const token = peek();
 
-    if (token.type === TokenType.If) return parseIfStatement();
-    if (token.type === TokenType.While) return parseWhileStatement();
-    if (token.type === TokenType.For) return parseForStatement();
-    if (token.type === TokenType.Return) return parseReturnStatement();
-    if (token.type === TokenType.Break) return parseBreakStatement();
-    if (token.type === TokenType.Identifier) return parseVariableAssignment();
-
-    throw new CompileError(
-      `Unexpected token '${token.type}' at line ${token.line}, column ${token.column}`,
-      token.line,
-      token.column
-    );
-  }
 
   function parseIfStatement(): IfStatement {
     consume(TokenType.If);
@@ -230,6 +257,40 @@ export function parse(source: string): Program {
 
     return { type: "ForStatement", initialization, condition, increment, body };
   }
+  function parseStatement(): Statement {
+    const token = peek();
+  
+    if (token.type === TokenType.If) return parseIfStatement();
+    if (token.type === TokenType.While) return parseWhileStatement();
+    if (token.type === TokenType.For) return parseForStatement();
+    if (token.type === TokenType.Return) return parseReturnStatement();
+    if (token.type === TokenType.Break) return parseBreakStatement();
+  
+    // Handle variable assignments and general expressions
+    if (token.type === TokenType.Identifier) {
+      const expression = parseExpression();
+  
+      // Check if this is a variable assignment
+      if (peek().type === TokenType.Equals) {
+        consume(TokenType.Equals); // Consume '='
+        const rightExpression = parseExpression();
+        if (peek().type === TokenType.Semicolon) consume(TokenType.Semicolon);
+        return { type: "VariableAssignment", varName: expression, expression: rightExpression };
+      }
+  
+      // Otherwise, treat it as a standalone expression statement
+      if (peek().type === TokenType.Semicolon) consume(TokenType.Semicolon);
+      return { type: "ExpressionStatement", expression };
+    }
+  
+    throw new CompileError(
+      `Unexpected token '${token.type}' at line ${token.line}, column ${token.column}`,
+      token.line,
+      token.column
+    );
+  }
+  
+  
 
   function parseBreakStatement(): BreakStatement {
     consume(TokenType.Break);
@@ -245,12 +306,14 @@ export function parse(source: string): Program {
   }
 
   function parseVariableAssignment(): VariableAssignment {
-    const varName = consume(TokenType.Identifier).value;
-    consume(TokenType.Equals);
-    const expression = parseExpression();
+    const varName = parsePrimaryExpression(); // Parse complex variable names
+    consume(TokenType.Equals); // Expect '='
+    const expression = parseExpression(); // Parse the right-hand side
     if (peek().type === TokenType.Semicolon) consume(TokenType.Semicolon);
     return { type: "VariableAssignment", varName, expression };
   }
+  
+  
 
   function parseExpression(): Expression {
     return parseLogicalExpression();
@@ -294,15 +357,42 @@ export function parse(source: string): Program {
     return left;
   }
 
-  function parseAdditiveExpression(): Expression {
-    let left = parseUnaryExpression();
-    while (peek().type === TokenType.Plus || peek().type === TokenType.Minus) {
-      const operator = consume().value;
-      const right = parseUnaryExpression();
-      left = { type: "BinaryOp", left, operator, right };
+  function parseMultiplicativeExpression(): Expression {
+    let left = parseUnaryExpression(); // Start with a unary expression
+  
+    while (
+      peek().type === TokenType.Asterisk || // '*' for multiplication
+      peek().type === TokenType.Slash || // '/' for division
+      peek().type === TokenType.Percent // '%' for modulus
+    ) {
+      const operator = consume().value; // Consume the operator
+      const right = parseUnaryExpression(); // Parse the right-hand side
+      left = { type: "BinaryOp", left, operator, right }; // Construct the binary operation
     }
+  
     return left;
   }
+  
+  function parseAdditiveExpression(): Expression {
+    let left = parseMultiplicativeExpression(); // Start with a multiplicative expression
+  
+    while (peek().type === TokenType.Plus || peek().type === TokenType.Minus) {
+      const operator = consume().value; // Consume '+' or '-'
+      const right = parseMultiplicativeExpression(); // Parse the right-hand side
+      left = { type: "BinaryOp", left, operator, right }; // Construct the binary operation
+    }
+  
+    return left;
+  }
+  // function parseAdditiveExpression(): Expression {
+  //   let left = parseUnaryExpression();
+  //   while (peek().type === TokenType.Plus || peek().type === TokenType.Minus) {
+  //     const operator = consume().value;
+  //     const right = parseUnaryExpression();
+  //     left = { type: "BinaryOp", left, operator, right };
+  //   }
+  //   return left;
+  // }
 
   function parseUnaryExpression(): Expression {
     if (peek().type === TokenType.Exclamation) {
@@ -315,7 +405,7 @@ export function parse(source: string): Program {
 
   function parsePrimaryExpression(): Expression {
     const base = consume();
-
+  
     if (
       base.type === TokenType.NumberLiteral ||
       base.type === TokenType.StringLiteral ||
@@ -323,30 +413,51 @@ export function parse(source: string): Program {
     ) {
       return { type: "Literal", value: base.value };
     }
-
+  
     if (base.type === TokenType.Identifier) {
       let expression: Expression = { type: "Identifier", value: base.value };
-
-      // Handle dot syntax for member access
-      while (peek().type === TokenType.Dot) {
-        consume(TokenType.Dot); // Consume the dot operator
-        const member = consume(TokenType.Identifier);
-        expression = { type: "MemberAccess", object: expression, member: member.value };
+  
+      // Handle member access and index access
+      while (peek().type === TokenType.Dot || peek().type === TokenType.OpenBracket || peek().type === TokenType.OpenParen) {
+        if (peek().type === TokenType.Dot) {
+          consume(TokenType.Dot); // Consume the dot operator
+          const member = consume(TokenType.Identifier);
+          expression = { type: "MemberAccess", object: expression, member: member.value };
+        } else if (peek().type === TokenType.OpenBracket) {
+          consume(TokenType.OpenBracket); // Consume '['
+          const indexExpression = parseExpression(); // Parse the index
+          consume(TokenType.CloseBracket); // Consume ']'
+          expression = { type: "IndexAccess", object: expression, index: indexExpression };
+        } else if (peek().type === TokenType.OpenParen) {
+          consume(TokenType.OpenParen); // Consume '('
+          const args: Expression[] = [];
+          while (peek().type !== TokenType.CloseParen) {
+            args.push(parseExpression()); // Parse arguments
+            if (peek().type === TokenType.Comma) {
+              consume(TokenType.Comma); // Consume ',' if more arguments
+            } else {
+              break;
+            }
+          }
+          consume(TokenType.CloseParen); // Consume ')'
+          expression = { type: "FunctionCall", object: expression, arguments: args };
+        }
       }
-
+  
       return expression;
     }
-
+  
     if (base.type === TokenType.OpenParen) {
       const expression = parseExpression();
       consume(TokenType.CloseParen);
       return expression;
     }
-
+  
     throw new CompileError(
       `Unexpected token in expression: '${base.type}' at line ${base.line}, column ${base.column}`,
       base.line,
       base.column
     );
   }
+  
 }

@@ -36,10 +36,7 @@ function checkContract(contract: ContractDefinition) {
     stateVarMap.set(sv.name, sv.typeName);
   }
 
-  let hasOwnerVar = false;
-  if (stateVarMap.has("owner") && stateVarMap.get("owner") === "address") {
-    hasOwnerVar = true;
-  }
+  let hasOwnerVar = stateVarMap.has("owner") && stateVarMap.get("owner") === "address";
 
   // Track function signatures to avoid collisions
   const sigMap = new Map<string, boolean>(); // name(paramCount)->exists
@@ -63,8 +60,7 @@ function checkFunction(
   if (fn.isOnlyOwner && !hasOwnerVar) {
     throw new CompileError(
       `Function '${fn.name}' is onlyOwner, but no 'owner: address' variable found.`,
-      0,
-      0
+      0, 0
     );
   }
 
@@ -72,8 +68,7 @@ function checkFunction(
   if (fn.isPayable && (fn.isView || fn.isPure)) {
     throw new CompileError(
       `Function '${fn.name}' cannot be payable and view/pure at the same time.`,
-      0,
-      0
+      0, 0
     );
   }
 
@@ -110,6 +105,9 @@ function checkStatement(
     case "ReturnStatement":
       checkReturnStatement(stmt, fn);
       break;
+      case "ExpressionStatement":
+        checkExpression(stmt.expression); // Check the expression in the statement
+        break;
     default:
       throw new CompileError(`Unsupported statement type: '${stmt.type}'`, 0, 0);
   }
@@ -119,7 +117,8 @@ function checkVariableAssignment(
   stmt: VariableAssignment, 
   stateVarMap: Map<string, string>
 ) {
-  if (!stateVarMap.has(stmt.varName)) {
+  const varName = resolveVarName(stmt.varName, stateVarMap);
+  if (!varName) {
     throw new CompileError(`Undefined variable '${stmt.varName}'`, 0, 0);
   }
   checkExpression(stmt.expression);
@@ -170,8 +169,7 @@ function checkReturnStatement(
   if (stmt.expression && !fn.returnType) {
     throw new CompileError(
       `Function '${fn.name}' does not expect a return value, but return expression found.`,
-      0,
-      0
+      0, 0
     );
   }
   if (stmt.expression) {
@@ -189,7 +187,7 @@ function checkExpression(expr: Expression): void {
       checkExpression(expr.right!);
       break;
     case "UnaryOp":
-      checkExpression(expr.value!);
+      checkExpression(expr.operand!);
       break;
     case "TernaryOp":
       checkExpression(expr.condition!);
@@ -199,9 +197,26 @@ function checkExpression(expr: Expression): void {
     case "FunctionCall":
       expr.arguments!.forEach(arg => checkExpression(arg));
       break;
+    case "MemberAccess":
+      checkExpression(expr.object!);
+      break;
+    case "IndexAccess":
+      checkExpression(expr.object!);
+      checkExpression(expr.index!);
+      break;
     default:
       throw new CompileError(`Unsupported expression type: '${expr.type}'`, 0, 0);
   }
+}
+
+function resolveVarName(varName: Expression, stateVarMap: Map<string, string>): string | null {
+  if (varName.type === "Identifier") {
+    return stateVarMap.has(varName.value) ? varName.value : null;
+  }
+  if (varName.type === "MemberAccess" || varName.type === "IndexAccess") {
+    return resolveVarName(varName.object!, stateVarMap);
+  }
+  return null;
 }
 
 /**

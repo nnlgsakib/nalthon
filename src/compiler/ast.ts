@@ -1,3 +1,4 @@
+
 export interface Program {
   contracts: ContractDefinition[];
 }
@@ -41,9 +42,20 @@ export type Statement =
   | ReturnStatement
   | ExpressionStatement;
 
+// export interface VariableAssignment {
+//   type: "VariableAssignment";
+//   varName: string;
+//   expression: Expression;
+// }
+
+export interface ExpressionStatement {
+  type: "ExpressionStatement";
+  expression: Expression;
+}
+
 export interface VariableAssignment {
   type: "VariableAssignment";
-  varName: string;
+  varName: Expression; // Allow complex expressions like IndexAccess
   expression: Expression;
 }
 
@@ -85,9 +97,20 @@ export interface ExpressionStatement {
   type: "ExpressionStatement";
   expression: Expression;
 }
+export interface IndexAccess {
+  type: "IndexAccess";
+  object: Expression; // The variable or mapping being indexed
+  index: Expression; // The index expression
+}
+
+export interface MemberAccess {
+  type: "MemberAccess";
+  object: Expression; // The variable being accessed
+  member: string; // The member being accessed
+}
 
 export interface Expression {
-  type: "Literal" | "Identifier" | "BinaryOp" | "UnaryOp" | "FunctionCall" | "MemberAccess" | "TernaryOp"| "BitwiseOp"|"LogicalOp";
+  type: "Literal" | "Identifier" | "BinaryOp" | "UnaryOp" | "FunctionCall" | "MemberAccess" | "TernaryOp"| "BitwiseOp"|"LogicalOp" | "IndexAccess" | "ExpressionStatement";
   value?: any;
   left?: Expression;
   operator?: string;
@@ -99,6 +122,8 @@ export interface Expression {
   trueBranch?: Expression;
   falseBranch?: Expression;
   operand?: Expression;
+  index?: Expression;
+  expression?: Expression;
 
 }
 export interface Parameter {

@@ -144,6 +144,7 @@ export const OPCODES: Record<string, string> = {
     REVERT: "FD",
     INVALID: "FE",
     SELFDESTRUCT: "FF",
+    SHR : "1C",
   };
   
   export function getOpcodeHex(op: string): string {
