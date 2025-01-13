@@ -1,4 +1,16 @@
-import { Program, ContractDefinition, FunctionDefinition } from "./ast";
+import { 
+  Program, 
+  ContractDefinition, 
+  FunctionDefinition, 
+  Statement, 
+  Expression, 
+  IfStatement, 
+  WhileStatement, 
+  ForStatement, 
+  BreakStatement, 
+  VariableAssignment,
+  ReturnStatement 
+} from "./ast";
 import { CompileError } from "../utils/errors";
 
 // Allowed base types (expand as needed)
@@ -29,44 +41,166 @@ function checkContract(contract: ContractDefinition) {
     hasOwnerVar = true;
   }
 
-  // track function signatures to avoid collisions
+  // Track function signatures to avoid collisions
   const sigMap = new Map<string, boolean>(); // name(paramCount)->exists
 
   for (const fn of contract.functions) {
-    // If function is named "constructor", check that it has no return type
-    if (fn.name === "constructor" && fn.returnType) {
-      throw new CompileError(`Constructor cannot have a return type`, 0, 0);
-    }
+    checkFunction(fn, hasOwnerVar, stateVarMap);
+  }
+}
 
-    // if "onlyOwner" used, we must have an 'owner' variable
-    if (fn.isOnlyOwner && !hasOwnerVar) {
-      throw new CompileError(
-        `Function '${fn.name}' is onlyOwner, but no 'owner: address' variable found.`,
-        0,
-        0
-      );
-    }
+function checkFunction(
+  fn: FunctionDefinition, 
+  hasOwnerVar: boolean, 
+  stateVarMap: Map<string, string>
+) {
+  // If function is named "constructor", check that it has no return type
+  if (fn.name === "constructor" && fn.returnType) {
+    throw new CompileError(`Constructor cannot have a return type`, 0, 0);
+  }
 
-    // can't be both payable and view/pure
-    if (fn.isPayable && (fn.isView || fn.isPure)) {
-      throw new CompileError(
-        `Function '${fn.name}' cannot be payable and view/pure at the same time.`,
-        0,
-        0
-      );
-    }
+  // if "onlyOwner" used, ensure 'owner' variable exists
+  if (fn.isOnlyOwner && !hasOwnerVar) {
+    throw new CompileError(
+      `Function '${fn.name}' is onlyOwner, but no 'owner: address' variable found.`,
+      0,
+      0
+    );
+  }
 
-    // check param types
-    for (const p of fn.parameters) {
-      checkValidType(p.typeName);
-    }
+  // Ensure payable functions cannot be view/pure
+  if (fn.isPayable && (fn.isView || fn.isPure)) {
+    throw new CompileError(
+      `Function '${fn.name}' cannot be payable and view/pure at the same time.`,
+      0,
+      0
+    );
+  }
 
-    // function signature check: name + paramCount
-    const sigKey = `${fn.name}(${fn.parameters.length})`;
-    if (sigMap.has(sigKey)) {
-      throw new CompileError(`Duplicate function signature '${sigKey}'`, 0, 0);
-    }
-    sigMap.set(sigKey, true);
+  // Check parameter types
+  for (const p of fn.parameters) {
+    checkValidType(p.typeName);
+  }
+
+  // Check function body statements
+  fn.body.forEach(stmt => checkStatement(stmt, stateVarMap, fn));
+}
+
+function checkStatement(
+  stmt: Statement, 
+  stateVarMap: Map<string, string>, 
+  fn: FunctionDefinition
+) {
+  switch (stmt.type) {
+    case "VariableAssignment":
+      checkVariableAssignment(stmt, stateVarMap);
+      break;
+    case "IfStatement":
+      checkIfStatement(stmt, stateVarMap, fn);
+      break;
+    case "WhileStatement":
+      checkWhileStatement(stmt, stateVarMap, fn);
+      break;
+    case "ForStatement":
+      checkForStatement(stmt, stateVarMap, fn);
+      break;
+    case "BreakStatement":
+      checkBreakStatement(stmt, fn);
+      break;
+    case "ReturnStatement":
+      checkReturnStatement(stmt, fn);
+      break;
+    default:
+      throw new CompileError(`Unsupported statement type: '${stmt.type}'`, 0, 0);
+  }
+}
+
+function checkVariableAssignment(
+  stmt: VariableAssignment, 
+  stateVarMap: Map<string, string>
+) {
+  if (!stateVarMap.has(stmt.varName)) {
+    throw new CompileError(`Undefined variable '${stmt.varName}'`, 0, 0);
+  }
+  checkExpression(stmt.expression);
+}
+
+function checkIfStatement(
+  stmt: IfStatement, 
+  stateVarMap: Map<string, string>, 
+  fn: FunctionDefinition
+) {
+  checkExpression(stmt.condition);
+  stmt.thenBlock.forEach(s => checkStatement(s, stateVarMap, fn));
+  if (stmt.elseBlock) {
+    stmt.elseBlock.forEach(s => checkStatement(s, stateVarMap, fn));
+  }
+}
+
+function checkWhileStatement(
+  stmt: WhileStatement, 
+  stateVarMap: Map<string, string>, 
+  fn: FunctionDefinition
+) {
+  checkExpression(stmt.condition);
+  stmt.body.forEach(s => checkStatement(s, stateVarMap, fn));
+}
+
+function checkForStatement(
+  stmt: ForStatement, 
+  stateVarMap: Map<string, string>, 
+  fn: FunctionDefinition
+) {
+  checkVariableAssignment(stmt.initialization, stateVarMap);
+  checkExpression(stmt.condition);
+  checkExpression(stmt.increment);
+  stmt.body.forEach(s => checkStatement(s, stateVarMap, fn));
+}
+
+function checkBreakStatement(stmt: BreakStatement, fn: FunctionDefinition) {
+  if (!fn.body.some(s => s.type === "WhileStatement" || s.type === "ForStatement")) {
+    throw new CompileError(`'break' used outside of a loop`, 0, 0);
+  }
+}
+
+function checkReturnStatement(
+  stmt: ReturnStatement, 
+  fn: FunctionDefinition
+) {
+  if (stmt.expression && !fn.returnType) {
+    throw new CompileError(
+      `Function '${fn.name}' does not expect a return value, but return expression found.`,
+      0,
+      0
+    );
+  }
+  if (stmt.expression) {
+    checkExpression(stmt.expression);
+  }
+}
+
+function checkExpression(expr: Expression): void {
+  switch (expr.type) {
+    case "Literal":
+    case "Identifier":
+      break; // Literals and identifiers are inherently valid
+    case "BinaryOp":
+      checkExpression(expr.left!);
+      checkExpression(expr.right!);
+      break;
+    case "UnaryOp":
+      checkExpression(expr.value!);
+      break;
+    case "TernaryOp":
+      checkExpression(expr.condition!);
+      checkExpression(expr.trueBranch!);
+      checkExpression(expr.falseBranch!);
+      break;
+    case "FunctionCall":
+      expr.arguments!.forEach(arg => checkExpression(arg));
+      break;
+    default:
+      throw new CompileError(`Unsupported expression type: '${expr.type}'`, 0, 0);
   }
 }
 
@@ -77,12 +211,11 @@ function checkContract(contract: ContractDefinition) {
  * - We allow "uint256", "address", "bool", "string", "mapping(...)"
  */
 function checkValidType(typeName: string): void {
-  // if it starts with "mapping(", treat as mapping
   if (ALLOWED_BASE_TYPES.has(typeName)) {
     return;
   }
   if (typeName.startsWith("mapping(") && typeName.endsWith(")")) {
-    return; 
+    return;
   }
   throw new CompileError(`Unknown or unsupported type '${typeName}'`, 0, 0);
 }

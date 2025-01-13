@@ -1,11 +1,16 @@
+import { Expression } from "./ast";
+
 export enum TokenType {
     // Brackets/Braces/Parentheses
     OpenBrace = "OpenBrace",
-    CloseBrace = "CloseBrace", 
+    CloseBrace = "CloseBrace",
     OpenParen = "OpenParen",
     CloseParen = "CloseParen",
     OpenBracket = "OpenBracket",
     CloseBracket = "CloseBracket",
+    //start and end indices
+    En = "En",
+    St = "St",
   
     // Punctuation
     Semicolon = "Semicolon",
@@ -44,6 +49,7 @@ export enum TokenType {
     Else = "Else",
     While = "While",
     For = "For",
+    Break = "Break",
   
     // Literals
     Identifier = "Identifier",
@@ -86,4 +92,10 @@ export interface CompiledContract {
   abi: ABIFunction[];
   creationBytecode: string;
   runtimeBytecode: string;
+}
+
+export interface Parameter {
+  name: string;
+  typeName: string;
+  defaultValue?: Expression;  // Add optional defaultValue property
 }

@@ -5,34 +5,35 @@ import { CompileError } from "../utils/errors";
 const KEYWORDS = new Map<string, TokenType>([
   ["contract", TokenType.Contract],
   ["def", TokenType.Def],
-  ["if", TokenType.Keyword],
-  ["elif", TokenType.Keyword],
-  ["else", TokenType.Keyword],
-  ["return", TokenType.Keyword],
-  ["for", TokenType.Keyword],
-  ["while", TokenType.Keyword],
+  ["if", TokenType.If],
+  ["else", TokenType.Else],
+  ["while", TokenType.While],
+  ["for", TokenType.For],
+  ["break", TokenType.Break],
+  ["continue", TokenType.Keyword],
+  ["return", TokenType.Return],
   ["payable", TokenType.Payable],
   ["view", TokenType.View],
   ["pure", TokenType.Pure],
   ["onlyOwner", TokenType.OnlyOwner],
   ["memory", TokenType.Memory],
   ["storage", TokenType.Storage],
+  ["st", TokenType.St], // Start block keyword
+  ["en", TokenType.En], // End block keyword
+  ["constructor", TokenType.Identifier], // Special identifier for constructors
 ]);
 
 const MULTI_CHAR_TOKENS = new Map([
   ["->", TokenType.Arrow],
-  ["=>", TokenType.Symbol],
-  ["==", TokenType.Symbol],
-  ["!=", TokenType.Symbol],
-  ["<=", TokenType.Symbol],
-  [">=", TokenType.Symbol],
+  ["&&", TokenType.Symbol], // Logical AND
+  ["||", TokenType.Symbol], // Logical OR
+  ["==", TokenType.Symbol], // Equality
+  ["!=", TokenType.Symbol], // Inequality
+  ["<=", TokenType.Symbol], // Less than or equal
+  [">=", TokenType.Symbol], // Greater than or equal
 ]);
 
 const SINGLE_CHAR_TOKENS = new Map([
-  ["{", TokenType.OpenBrace],
-  ["}", TokenType.CloseBrace],
-  ["[", TokenType.OpenBracket],
-  ["]", TokenType.CloseBracket],
   ["(", TokenType.OpenParen],
   [")", TokenType.CloseParen],
   [":", TokenType.Colon],
@@ -43,16 +44,20 @@ const SINGLE_CHAR_TOKENS = new Map([
   ["-", TokenType.Minus],
   ["*", TokenType.Asterisk],
   ["/", TokenType.Slash],
-  [".", TokenType.Dot],
+  ["<", TokenType.LessThan],
+  [">", TokenType.GreaterThan],
+  ["{", TokenType.OpenBrace],
+  ["}", TokenType.CloseBrace],
+  ["[", TokenType.OpenBracket],
+  ["]", TokenType.CloseBracket],
   ["%", TokenType.Percent],
   ["^", TokenType.Caret],
   ["&", TokenType.Ampersand],
   ["|", TokenType.Pipe],
   ["~", TokenType.Tilde],
   ["!", TokenType.Exclamation],
-  ["<", TokenType.LessThan],
-  [">", TokenType.GreaterThan],
   ["?", TokenType.Question],
+  [".", TokenType.Dot],
 ]);
 
 export function tokenize(source: string): Token[] {
@@ -66,7 +71,11 @@ export function tokenize(source: string): Token[] {
     col += count;
   }
 
-  while (current < source.length) {
+  function isAtEnd() {
+    return current >= source.length;
+  }
+
+  while (!isAtEnd()) {
     const char = source[current];
 
     // Handle newlines
@@ -83,10 +92,10 @@ export function tokenize(source: string): Token[] {
       continue;
     }
 
-    // Comments
+    // Comments (single-line, starting with '#')
     if (char === "#") {
       advance();
-      while (current < source.length && source[current] !== "\n") {
+      while (!isAtEnd() && source[current] !== "\n") {
         advance();
       }
       continue;
@@ -98,54 +107,44 @@ export function tokenize(source: string): Token[] {
       const startCol = col;
       advance(); // Skip opening quote
 
-      while (current < source.length) {
+      while (!isAtEnd()) {
         const currentChar = source[current];
-        
-        // Handle end of string
+
         if (currentChar === '"') {
           advance(); // Skip closing quote
           break;
         }
-        
-        // Handle escape sequences
-        if (currentChar === '\\') {
-          advance(); // Skip backslash
-          if (current >= source.length) {
-            throw new CompileError("Unterminated string literal - escape sequence", line, col);
-          }
-          
-          const nextChar = source[current];
-          switch (nextChar) {
-            case 'n': value += '\n'; break;
-            case 't': value += '\t'; break;
-            case 'r': value += '\r'; break;
-            case '\\': value += '\\'; break;
-            case '"': value += '"'; break;
-            default:
-              throw new CompileError(`Invalid escape sequence: \\${nextChar}`, line, col);
-          }
+
+        if (currentChar === "\\") {
           advance();
-          continue;
+          const escapeChar = source[current];
+          switch (escapeChar) {
+            case "n":
+              value += "\n";
+              break;
+            case "t":
+              value += "\t";
+              break;
+            case "\\":
+              value += "\\";
+              break;
+            case '"':
+              value += '"';
+              break;
+            default:
+              throw new CompileError(`Invalid escape sequence '\\${escapeChar}'`, line, col);
+          }
+        } else {
+          value += currentChar;
         }
-
-        // Handle unterminated strings
-        if (currentChar === '\n') {
-          throw new CompileError("Unterminated string literal - unexpected newline", line, col);
-        }
-
-        value += currentChar;
         advance();
-      }
-
-      if (current > source.length || source[current - 1] !== '"') {
-        throw new CompileError("Unterminated string literal", line, startCol);
       }
 
       tokens.push({
         type: TokenType.StringLiteral,
         value,
         line,
-        column: startCol
+        column: startCol,
       });
       continue;
     }
@@ -158,7 +157,7 @@ export function tokenize(source: string): Token[] {
           type,
           value: pattern,
           line,
-          column: col
+          column: col,
         });
         advance(pattern.length);
         foundMultiChar = true;
@@ -173,25 +172,32 @@ export function tokenize(source: string): Token[] {
         type: SINGLE_CHAR_TOKENS.get(char)!,
         value: char,
         line,
-        column: col
+        column: col,
       });
       advance();
       continue;
     }
 
-    // Numbers
+    // Numbers (Integer and Decimal)
     if (/\d/.test(char)) {
       let value = "";
       const startCol = col;
-      while (current < source.length && /\d/.test(source[current])) {
+      let hasDecimal = false;
+
+      while (!isAtEnd() && /[\d.]/.test(source[current])) {
+        if (source[current] === ".") {
+          if (hasDecimal) throw new CompileError("Invalid number format", line, col);
+          hasDecimal = true;
+        }
         value += source[current];
         advance();
       }
+
       tokens.push({
         type: TokenType.NumberLiteral,
         value,
         line,
-        column: startCol
+        column: startCol,
       });
       continue;
     }
@@ -200,30 +206,24 @@ export function tokenize(source: string): Token[] {
     if (/[A-Za-z_]/.test(char)) {
       let value = "";
       const startCol = col;
-      while (current < source.length && /[A-Za-z0-9_]/.test(source[current])) {
+      while (!isAtEnd() && /[A-Za-z0-9_]/.test(source[current])) {
         value += source[current];
         advance();
       }
-      
-      const type = KEYWORDS.has(value) ? KEYWORDS.get(value)! : TokenType.Identifier;
+
+      const type = KEYWORDS.get(value) || TokenType.Identifier;
       tokens.push({
         type,
         value,
         line,
-        column: startCol
+        column: startCol,
       });
       continue;
     }
 
-    throw new CompileError(`Unexpected character: ${char}`, line, col);
+    throw new CompileError(`Unexpected character '${char}' at line ${line}, column ${col}`, line, col);
   }
 
-  tokens.push({
-    type: TokenType.EOF,
-    value: "",
-    line,
-    column: col
-  });
-
+  tokens.push({ type: TokenType.EOF, value: "", line, column: col });
   return tokens;
 }
