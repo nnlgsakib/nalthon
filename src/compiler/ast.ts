@@ -7,6 +7,7 @@ export interface ContractDefinition {
   name: string;
   stateVars: VariableDeclaration[];
   functions: FunctionDefinition[];
+  structs: StructDefinition[];
 }
 
 export interface VariableDeclaration {
@@ -18,7 +19,7 @@ export interface VariableDeclaration {
 export interface FunctionDefinition {
   name: string;
   parameters: Parameter[];
-  returnType?: string;
+  returnType?: string | string[]; // Allow tuple return types
   isConstructor?: boolean;
   isPayable?: boolean;
   isView?: boolean;
@@ -31,6 +32,11 @@ export interface Parameter {
   name: string;
   typeName: string;
 }
+export interface TupleExpression {
+  type: "Tuple";
+  elements: Expression[]; // Represents the elements of the tuple
+}
+
 
 export type Statement =
   | VariableAssignment
@@ -41,7 +47,7 @@ export type Statement =
   | ContinueStatement
   | ReturnStatement
   | ExpressionStatement;
-
+ 
 // export interface VariableAssignment {
 //   type: "VariableAssignment";
 //   varName: string;
@@ -110,7 +116,7 @@ export interface MemberAccess {
 }
 
 export interface Expression {
-  type: "Literal" | "Identifier" | "BinaryOp" | "UnaryOp" | "FunctionCall" | "MemberAccess" | "TernaryOp"| "BitwiseOp"|"LogicalOp" | "IndexAccess" | "ExpressionStatement";
+  type: "Literal" | "Identifier" | "BinaryOp" | "UnaryOp" | "FunctionCall" | "MemberAccess" | "TernaryOp"| "BitwiseOp"|"LogicalOp" | "IndexAccess" | "ExpressionStatement" | "Tuple";
   value?: any;
   left?: Expression;
   operator?: string;
@@ -124,10 +130,23 @@ export interface Expression {
   operand?: Expression;
   index?: Expression;
   expression?: Expression;
+  elements?: Expression[]; // Add this for tuple elements
 
 }
 export interface Parameter {
   name: string;
   typeName: string;
   defaultValue?: Expression;  // Add optional defaultValue property
+}
+
+
+export interface StructDefinition {
+  type: "StructDefinition";
+  name: string;
+  fields: StructField[];
+}
+
+export interface StructField {
+  name: string;
+  type: string;
 }

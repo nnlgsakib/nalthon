@@ -15,6 +15,8 @@ import {
   BreakStatement,
   VariableAssignment,
   ReturnStatement,
+  StructDefinition,
+  StructField,
 } from "./ast";
 import { CompileError } from "../utils/errors";
 
@@ -56,18 +58,21 @@ export function parse(source: string): Program {
 
     const stateVars: VariableDeclaration[] = [];
     const functions: FunctionDefinition[] = [];
+    const structs: StructDefinition[] = [];
 
     while (peek().type !== TokenType.En) {
-      if (peek().type === TokenType.Def) {
-        functions.push(parseFunction());
-      } else {
-        stateVars.push(parseStateVar());
-      }
+        if (peek().type === TokenType.Def) {
+            functions.push(parseFunction());
+        } else if (peek().type === TokenType.Struct) {
+            structs.push(parseStruct());
+        } else {
+            stateVars.push(parseStateVar());
+        }
     }
 
     consume(TokenType.En);
-    return { name: contractName, stateVars, functions };
-  }
+    return { name: contractName, stateVars, functions, structs };
+}
   function parseStateVar(): VariableDeclaration {
     const nameToken = consume(TokenType.Identifier);
   
@@ -137,23 +142,23 @@ export function parse(source: string): Program {
     consume(TokenType.OpenParen);
     const parameters: Parameter[] = [];
     while (peek().type !== TokenType.CloseParen) {
-      const paramName = consume(TokenType.Identifier).value;
-      consume(TokenType.Colon);
-      const paramType = consume(TokenType.Identifier).value;
+        const paramName = consume(TokenType.Identifier).value;
+        consume(TokenType.Colon);
+        const paramType = consume(TokenType.Identifier).value;
 
-      let defaultValue: Expression | undefined;
-      if (peek().type === TokenType.Equals) {
-        consume(TokenType.Equals);
-        defaultValue = parseExpression();
-      }
+        let defaultValue: Expression | undefined;
+        if (peek().type === TokenType.Equals) {
+            consume(TokenType.Equals);
+            defaultValue = parseExpression();
+        }
 
-      parameters.push({ name: paramName, typeName: paramType, defaultValue });
+        parameters.push({ name: paramName, typeName: paramType, defaultValue });
 
-      if (peek().type === TokenType.Comma) {
-        consume(TokenType.Comma);
-      } else {
-        break;
-      }
+        if (peek().type === TokenType.Comma) {
+            consume(TokenType.Comma);
+        } else {
+            break;
+        }
     }
     consume(TokenType.CloseParen);
 
@@ -163,68 +168,194 @@ export function parse(source: string): Program {
     let isOnlyOwner = false;
 
     while (
-      [TokenType.Payable, TokenType.View, TokenType.Pure, TokenType.OnlyOwner].includes(peek().type)
+        [TokenType.Payable, TokenType.View, TokenType.Pure, TokenType.OnlyOwner].includes(peek().type)
     ) {
-      const modifier = consume();
-      if (modifier.type === TokenType.Payable) isPayable = true;
-      if (modifier.type === TokenType.View) isView = true;
-      if (modifier.type === TokenType.Pure) isPure = true;
-      if (modifier.type === TokenType.OnlyOwner) isOnlyOwner = true;
+        const modifier = consume();
+        if (modifier.type === TokenType.Payable) isPayable = true;
+        if (modifier.type === TokenType.View) isView = true;
+        if (modifier.type === TokenType.Pure) isPure = true;
+        if (modifier.type === TokenType.OnlyOwner) isOnlyOwner = true;
     }
 
-    let returnType: string | undefined;
+    let returnType: string | string[] | undefined;
     if (peek().type === TokenType.Arrow) {
-      consume(TokenType.Arrow);
-      returnType = consume(TokenType.Identifier).value;
+        consume(TokenType.Arrow);
+
+        // Handle tuple return types
+        if (peek().type === TokenType.OpenParen) {
+            consume(TokenType.OpenParen);
+            const tupleTypes: string[] = [];
+            while (peek().type !== TokenType.CloseParen) {
+                tupleTypes.push(consume(TokenType.Identifier).value);
+                if (peek().type === TokenType.Comma) {
+                    consume(TokenType.Comma);
+                } else {
+                    break;
+                }
+            }
+            consume(TokenType.CloseParen);
+            returnType = tupleTypes;
+        } else {
+            // Single return type
+            returnType = consume(TokenType.Identifier).value;
+        }
     }
 
     consume(TokenType.St);
     const body: Statement[] = [];
     while (peek().type !== TokenType.En) {
-      body.push(parseStatement());
+        body.push(parseStatement());
     }
     consume(TokenType.En);
 
-    return { name: fnName, parameters, returnType, isPayable, isView, isPure, isOnlyOwner, body };
-  }
+    return {
+        name: fnName,
+        parameters,
+        returnType,
+        isPayable,
+        isView,
+        isPure,
+        isOnlyOwner,
+        body,
+    };
+}
 
 
 
-  function parseIfStatement(): IfStatement {
-    consume(TokenType.If);
-    const condition = parseExpression();
 
-    consume(TokenType.OpenBrace);
-    const thenBlock: Statement[] = [];
-    while (peek().type !== TokenType.CloseBrace) {
-      thenBlock.push(parseStatement());
-    }
-    consume(TokenType.CloseBrace);
 
-    let elseBlock: Statement[] | undefined;
-    if (peek().type === TokenType.Else) {
-      consume(TokenType.Else);
 
-      if (peek().type === TokenType.OpenBrace) {
-        consume(TokenType.OpenBrace);
-        elseBlock = [];
-        while (peek().type !== TokenType.CloseBrace) {
-          elseBlock.push(parseStatement());
-        }
-        consume(TokenType.CloseBrace);
-      } else if (peek().type === TokenType.If) {
-        elseBlock = [parseIfStatement()];
+//struct 
+
+
+function parseStruct(): StructDefinition {
+  consume(TokenType.Struct);
+  const structName = consume(TokenType.Identifier).value;
+
+  consume(TokenType.St);
+
+  const fields: StructField[] = [];
+  while (peek().type !== TokenType.En) {
+      const fieldName = consume(TokenType.Identifier).value;
+      consume(TokenType.Colon);
+      
+      // Parse the field type, which could be a simple type or a mapping
+      let fieldType: string;
+      if (peek().type === TokenType.Identifier && peek().value === "mapping") {
+          fieldType = parseMappingType();
       } else {
-        throw new CompileError(
-          `Unexpected token after 'else': '${peek().type}' at line ${peek().line}, column ${peek().column}`,
-          peek().line,
-          peek().column
-        );
+          fieldType = consume(TokenType.Identifier).value;
       }
-    }
 
-    return { type: "IfStatement", condition, thenBlock, elseBlock };
+      fields.push({
+          name: fieldName,
+          type: fieldType,
+      });
+
+      if (peek().type === TokenType.Semicolon) {
+          consume(TokenType.Semicolon);
+      }
   }
+
+  consume(TokenType.En);
+
+  return {
+      type: "StructDefinition",
+      name: structName,
+      fields,
+  };
+}
+
+function parseMappingType(): string {
+  consume(TokenType.Identifier); // Consume 'mapping'
+  consume(TokenType.OpenParen);
+
+  // Parse key type (e.g., 'address')
+  const keyType = consume(TokenType.Identifier).value;
+
+  // Consume the arrow token
+  consume(TokenType.Arrow);
+
+  // Parse value type
+  let valueType: string;
+  if (peek().type === TokenType.Identifier && peek().value === "mapping") {
+      valueType = parseMappingType(); // Handle nested mappings
+  } else {
+      valueType = consume(TokenType.Identifier).value;
+  }
+
+  consume(TokenType.CloseParen);
+  return `mapping(${keyType} -> ${valueType})`;
+}
+
+function parseType(): string {
+  if (peek().type === TokenType.Identifier) {
+      const typeName = consume(TokenType.Identifier).value;
+
+      // Check for mapping and parse it
+      if (typeName === "mapping") {
+          return parseMappingType();
+      }
+
+      return typeName;
+  }
+
+  throw new CompileError(
+      `Expected a type identifier, but got '${peek().value}'`,
+      peek().line,
+      peek().column
+  );
+}
+
+
+
+
+function parseIfStatement(): IfStatement {
+  consume(TokenType.If); // Consume the 'if' keyword
+
+  // Parse the condition expression (supports compound conditions with logical operators)
+  const condition = parseExpression();
+
+  // Parse the 'then' block enclosed in braces
+  consume(TokenType.OpenBrace); // Expect '{'
+  const thenBlock: Statement[] = [];
+  while (peek().type !== TokenType.CloseBrace) {
+    thenBlock.push(parseStatement());
+  }
+  consume(TokenType.CloseBrace); // Expect '}'
+
+  let elseBlock: Statement[] | undefined;
+  if (peek().type === TokenType.Else) {
+    consume(TokenType.Else); // Consume the 'else' keyword
+
+    if (peek().type === TokenType.OpenBrace) {
+      // Else block with braces
+      consume(TokenType.OpenBrace); // Expect '{'
+      elseBlock = [];
+      while (peek().type !== TokenType.CloseBrace) {
+        elseBlock.push(parseStatement());
+      }
+      consume(TokenType.CloseBrace); // Expect '}'
+    } else if (peek().type === TokenType.If) {
+      // Else-if condition
+      elseBlock = [parseIfStatement()];
+    } else {
+      throw new CompileError(
+        `Unexpected token after 'else': '${peek().type}' at line ${peek().line}, column ${peek().column}`,
+        peek().line,
+        peek().column
+      );
+    }
+  }
+
+  return {
+    type: "IfStatement",
+    condition,
+    thenBlock,
+    elseBlock,
+  };
+}
+
 
   function parseWhileStatement(): WhileStatement {
     consume(TokenType.While);
@@ -330,38 +461,35 @@ export function parse(source: string): Program {
 
 
 
-  function parseStatement(): Statement {
-    const token = peek();
-  
-    if (token.type === TokenType.If) return parseIfStatement();
-    if (token.type === TokenType.While) return parseWhileStatement();
-    if (token.type === TokenType.For) return parseForStatement();
-    if (token.type === TokenType.Return) return parseReturnStatement();
-    if (token.type === TokenType.Break) return parseBreakStatement();
-  
-    // Handle variable assignments and general expressions
-    if (token.type === TokenType.Identifier) {
-      const expression = parseExpression();
-  
-      // Check if this is a variable assignment
-      if (peek().type === TokenType.Equals) {
-        consume(TokenType.Equals); // Consume '='
-        const rightExpression = parseExpression();
-        if (peek().type === TokenType.Semicolon) consume(TokenType.Semicolon);
-        return { type: "VariableAssignment", varName: expression, expression: rightExpression };
-      }
-  
-      // Otherwise, treat it as a standalone expression statement
+function parseStatement(): Statement {
+  const token = peek();
+
+  if (token.type === TokenType.If) return parseIfStatement();
+  if (token.type === TokenType.While) return parseWhileStatement();
+  if (token.type === TokenType.For) return parseForStatement();
+  if (token.type === TokenType.Return) return parseReturnStatement();
+  if (token.type === TokenType.Break) return parseBreakStatement();
+
+  // Handle variable assignments and general expressions
+  const lhsExpression = parseExpression();
+
+  // Check if this is a variable assignment
+  if (peek().type === TokenType.Equals) {
+      consume(TokenType.Equals); // Consume '='
+      const rhsExpression = parseExpression();
       if (peek().type === TokenType.Semicolon) consume(TokenType.Semicolon);
-      return { type: "ExpressionStatement", expression };
-    }
-  
-    throw new CompileError(
-      `Unexpected token '${token.type}' at line ${token.line}, column ${token.column}`,
-      token.line,
-      token.column
-    );
+      return {
+          type: "VariableAssignment",
+          varName: lhsExpression,
+          expression: rhsExpression,
+      };
   }
+
+  // Otherwise, treat it as a standalone expression statement
+  if (peek().type === TokenType.Semicolon) consume(TokenType.Semicolon);
+  return { type: "ExpressionStatement", expression: lhsExpression };
+}
+
   
   
 
@@ -373,10 +501,34 @@ export function parse(source: string): Program {
 
   function parseReturnStatement(): ReturnStatement {
     consume(TokenType.Return);
-    const expression = peek().type !== TokenType.Semicolon ? parseExpression() : undefined;
-    if (peek().type === TokenType.Semicolon) consume(TokenType.Semicolon);
+
+    let expression: Expression | undefined;
+
+    if (peek().type === TokenType.OpenParen) {
+        consume(TokenType.OpenParen); // Consume '(' for the tuple
+        const elements: Expression[] = [];
+        while (peek().type !== TokenType.CloseParen) {
+            elements.push(parseExpression());
+            if (peek().type === TokenType.Comma) {
+                consume(TokenType.Comma); // Consume ',' between tuple elements
+            } else {
+                break;
+            }
+        }
+        consume(TokenType.CloseParen); // Consume ')'
+        expression = { type: "Tuple", elements };
+    } else if (peek().type !== TokenType.Semicolon) {
+        expression = parseExpression(); // Handle single expression return
+    }
+
+    if (peek().type === TokenType.Semicolon) {
+        consume(TokenType.Semicolon);
+    }
+
     return { type: "ReturnStatement", expression };
-  }
+}
+
+
 
   function parseVariableAssignment(): VariableAssignment {
     const varName = parsePrimaryExpression(); // Parse complex variable names
@@ -389,8 +541,24 @@ export function parse(source: string): Program {
   
 
   function parseExpression(): Expression {
+    if (peek().type === TokenType.OpenParen) {
+        consume(TokenType.OpenParen); // Consume '(' for the tuple
+        const elements: Expression[] = [];
+        while (peek().type !== TokenType.CloseParen) {
+            elements.push(parseExpression());
+            if (peek().type === TokenType.Comma) {
+                consume(TokenType.Comma); // Consume ',' between tuple elements
+            } else {
+                break;
+            }
+        }
+        consume(TokenType.CloseParen); // Consume ')'
+        return { type: "Tuple", elements };
+    }
+
     return parseLogicalExpression();
-  }
+}
+
 
   function parseLogicalExpression(): Expression {
     let left = parseBitwiseExpression();
@@ -478,59 +646,78 @@ export function parse(source: string): Program {
 
   function parsePrimaryExpression(): Expression {
     const base = consume();
-  
+
     if (
-      base.type === TokenType.NumberLiteral ||
-      base.type === TokenType.StringLiteral ||
-      base.type === TokenType.BooleanLiteral
+        base.type === TokenType.NumberLiteral ||
+        base.type === TokenType.StringLiteral ||
+        base.type === TokenType.BooleanLiteral
     ) {
-      return { type: "Literal", value: base.value };
+        return { type: "Literal", value: base.value };
     }
-  
-    if (base.type === TokenType.Identifier) {
-      let expression: Expression = { type: "Identifier", value: base.value };
-  
-      // Handle member access and index access
-      while (peek().type === TokenType.Dot || peek().type === TokenType.OpenBracket || peek().type === TokenType.OpenParen) {
-        if (peek().type === TokenType.Dot) {
-          consume(TokenType.Dot); // Consume the dot operator
-          const member = consume(TokenType.Identifier);
-          expression = { type: "MemberAccess", object: expression, member: member.value };
-        } else if (peek().type === TokenType.OpenBracket) {
-          consume(TokenType.OpenBracket); // Consume '['
-          const indexExpression = parseExpression(); // Parse the index
-          consume(TokenType.CloseBracket); // Consume ']'
-          expression = { type: "IndexAccess", object: expression, index: indexExpression };
-        } else if (peek().type === TokenType.OpenParen) {
-          consume(TokenType.OpenParen); // Consume '('
-          const args: Expression[] = [];
-          while (peek().type !== TokenType.CloseParen) {
-            args.push(parseExpression()); // Parse arguments
-            if (peek().type === TokenType.Comma) {
-              consume(TokenType.Comma); // Consume ',' if more arguments
-            } else {
-              break;
-            }
-          }
-          consume(TokenType.CloseParen); // Consume ')'
-          expression = { type: "FunctionCall", object: expression, arguments: args };
+
+    if (base.type === TokenType.OpenBrace) {
+        // Handle empty braces '{}'
+        if (peek().type === TokenType.CloseBrace) {
+            consume(TokenType.CloseBrace); // Consume '}'
+            return { type: "Literal", value: {} }; // Represent empty object or mapping
         }
-      }
-  
-      return expression;
+        throw new CompileError(
+            `Unexpected token in expression: '${base.type}' at line ${base.line}, column ${base.column}`,
+            base.line,
+            base.column
+        );
     }
-  
+
+    if (base.type === TokenType.Identifier) {
+        let expression: Expression = { type: "Identifier", value: base.value };
+
+        // Handle member access, index access, or function call
+        while (
+            peek().type === TokenType.Dot ||
+            peek().type === TokenType.OpenBracket ||
+            peek().type === TokenType.OpenParen
+        ) {
+            if (peek().type === TokenType.Dot) {
+                consume(TokenType.Dot); // Consume the dot operator
+                const member = consume(TokenType.Identifier);
+                expression = { type: "MemberAccess", object: expression, member: member.value };
+            } else if (peek().type === TokenType.OpenBracket) {
+                consume(TokenType.OpenBracket); // Consume '['
+                const indexExpression = parseExpression(); // Parse the index
+                consume(TokenType.CloseBracket); // Consume ']'
+                expression = { type: "IndexAccess", object: expression, index: indexExpression };
+            } else if (peek().type === TokenType.OpenParen) {
+                consume(TokenType.OpenParen); // Consume '('
+                const args: Expression[] = [];
+                while (peek().type !== TokenType.CloseParen) {
+                    args.push(parseExpression()); // Parse arguments
+                    if (peek().type === TokenType.Comma) {
+                        consume(TokenType.Comma); // Consume ',' if more arguments
+                    } else {
+                        break;
+                    }
+                }
+                consume(TokenType.CloseParen); // Consume ')'
+                expression = { type: "FunctionCall", object: expression, arguments: args };
+            }
+        }
+
+        return expression;
+    }
+
     if (base.type === TokenType.OpenParen) {
-      const expression = parseExpression();
-      consume(TokenType.CloseParen);
-      return expression;
+        const expression = parseExpression();
+        consume(TokenType.CloseParen);
+        return expression;
     }
-  
+
     throw new CompileError(
-      `Unexpected token in expression: '${base.type}' at line ${base.line}, column ${base.column}`,
-      base.line,
-      base.column
+        `Unexpected token in expression: '${base.type}' at line ${base.line}, column ${base.column}`,
+        base.line,
+        base.column
     );
-  }
+}
+
+
   
 }

@@ -21,6 +21,9 @@ const KEYWORDS = new Map<string, TokenType>([
   ["st", TokenType.St], // Start block keyword
   ["en", TokenType.En], // End block keyword
   ["constructor", TokenType.Identifier], // Special identifier for constructors
+  ["struct", TokenType.Struct],
+  ["true", TokenType.BooleanLiteral],
+  ["false", TokenType.BooleanLiteral],
 ]);
 
 const MULTI_CHAR_TOKENS = new Map([

@@ -50,6 +50,7 @@ export enum TokenType {
     While = "While",
     For = "For",
     Break = "Break",
+    Struct = "Struct",
   
     // Literals
     Identifier = "Identifier",

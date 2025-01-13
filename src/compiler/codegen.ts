@@ -50,13 +50,23 @@ function buildABI(contractDef: ContractDefinition): { abi: ABIFunction[]; constr
         type: "function",
         stateMutability: getStateMutability(fn),
         inputs: fn.parameters.map((p) => ({ name: p.name, type: p.typeName })),
-        outputs: fn.returnType ? [{ name: "", type: fn.returnType }] : [],
+        outputs: fn.returnType
+          ? [{ name: "", type: formatReturnType(fn.returnType) }]
+          : [],
       });
     }
   }
 
   return { abi, constructorFn };
 }
+function formatReturnType(returnType: string | string[]): string {
+  if (Array.isArray(returnType)) {
+    // Tuple return types are formatted as "tuple(type1,type2,...)"
+    return `tuple(${returnType.join(",")})`;
+  }
+  return returnType; // Single return type
+}
+
 
 function getStateMutability(fn: FunctionDefinition): "payable" | "view" | "pure" | "nonpayable" {
   if (fn.isPayable) return "payable";

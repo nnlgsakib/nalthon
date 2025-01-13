@@ -225,6 +225,12 @@ function checkExpression(expr: Expression): void {
       checkExpression(expr.object!);
       checkExpression(expr.index!);
       break;
+      case "Tuple":
+        if (!expr.elements || expr.elements.length === 0) {
+          throw new CompileError(`Empty tuple is not allowed`, 0, 0);
+        }
+        expr.elements.forEach(element => checkExpression(element)); // Check all elements in the tuple
+        break;
     default:
       throw new CompileError(`Unsupported expression type: '${expr.type}'`, 0, 0);
   }
