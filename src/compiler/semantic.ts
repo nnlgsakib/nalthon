@@ -114,12 +114,16 @@ function checkStatement(
 }
 
 function checkVariableAssignment(
-  stmt: VariableAssignment, 
+  stmt: VariableAssignment,
   stateVarMap: Map<string, string>
 ) {
   const varName = resolveVarName(stmt.varName, stateVarMap);
-  if (!varName) {
-    throw new CompileError(`Undefined variable '${stmt.varName}'`, 0, 0);
+  if (!varName || !stateVarMap.has(varName)) {
+    throw new CompileError(
+      `Undefined variable '${varName || "unknown"}'`,
+      0,
+      0
+    );
   }
   checkExpression(stmt.expression);
 }
@@ -146,15 +150,32 @@ function checkWhileStatement(
 }
 
 function checkForStatement(
-  stmt: ForStatement, 
-  stateVarMap: Map<string, string>, 
+  stmt: ForStatement,
+  stateVarMap: Map<string, string>,
   fn: FunctionDefinition
 ) {
+  const varName = resolveVarName(stmt.initialization.varName, stateVarMap);
+
+  // If the variable is not in the stateVarMap, it's either an inline declaration or undefined
+  if (!varName || !stateVarMap.has(varName)) {
+      if (stmt.initialization.type === "VariableAssignment") {
+          // Treat this as a valid inline declaration
+          stateVarMap.set(varName!, "unknown"); // You can replace "unknown" with the actual type
+      } else {
+          throw new CompileError(
+              `Undefined variable in 'for' loop initialization: '${varName || "unknown"}'`,
+              0,
+              0
+          );
+      }
+  }
+
   checkVariableAssignment(stmt.initialization, stateVarMap);
   checkExpression(stmt.condition);
   checkExpression(stmt.increment);
-  stmt.body.forEach(s => checkStatement(s, stateVarMap, fn));
+  stmt.body.forEach((s) => checkStatement(s, stateVarMap, fn));
 }
+
 
 function checkBreakStatement(stmt: BreakStatement, fn: FunctionDefinition) {
   if (!fn.body.some(s => s.type === "WhileStatement" || s.type === "ForStatement")) {
@@ -211,14 +232,18 @@ function checkExpression(expr: Expression): void {
 
 function resolveVarName(varName: Expression, stateVarMap: Map<string, string>): string | null {
   if (varName.type === "Identifier") {
-    return stateVarMap.has(varName.value) ? varName.value : null;
+    return varName.value; // Return the variable name
   }
-  if (varName.type === "MemberAccess" || varName.type === "IndexAccess") {
-    return resolveVarName(varName.object!, stateVarMap);
+  if (varName.type === "MemberAccess") {
+    const objectName = resolveVarName(varName.object!, stateVarMap);
+    return objectName ? `${objectName}.${varName.member}` : null;
   }
-  return null;
+  if (varName.type === "IndexAccess") {
+    const objectName = resolveVarName(varName.object!, stateVarMap);
+    return objectName ? `${objectName}[...]` : null; // Simplified index representation
+  }
+  return null; // Unsupported variable reference
 }
-
 /**
  * Check if a type is recognized. If not, throw an error.
  * 

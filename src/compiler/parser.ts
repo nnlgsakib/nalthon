@@ -240,23 +240,96 @@ export function parse(source: string): Program {
 
   function parseForStatement(): ForStatement {
     consume(TokenType.For);
-    consume(TokenType.OpenParen);
-    const initialization = parseVariableAssignment();
-    if (peek().type === TokenType.Semicolon) consume(TokenType.Semicolon);
-    const condition = parseExpression();
-    if (peek().type === TokenType.Semicolon) consume(TokenType.Semicolon);
-    const increment = parseExpression();
-    consume(TokenType.CloseParen);
 
-    consume(TokenType.St);
-    const body: Statement[] = [];
-    while (peek().type !== TokenType.En) {
-      body.push(parseStatement());
+    // Parse the loop variable (either a new declaration or an existing variable)
+    let initialization: VariableAssignment;
+    const firstToken = peek();
+
+    if (firstToken.type === TokenType.Identifier) {
+        // Variable name
+        const varName = consume(TokenType.Identifier).value;
+
+        // Check for assignment operator '='
+        if (peek().type === TokenType.Equals) {
+            consume(); // Consume '='
+
+            // Parse the initialization expression (e.g., `0`)
+            const expression = parseExpression();
+
+            initialization = {
+                type: "VariableAssignment",
+                varName: { type: "Identifier", value: varName },
+                expression,
+            };
+        } else {
+            // If '=' is not found, treat it as an existing variable (validate later in semantic checks)
+            throw new CompileError(
+                `Expected '=' after variable name in 'for' loop initialization, got '${peek().value}'`,
+                peek().line,
+                peek().column
+            );
+        }
+    } else {
+        throw new CompileError(
+            `Expected variable declaration or existing variable in 'for' loop initialization, got '${firstToken.type}'`,
+            firstToken.line,
+            firstToken.column
+        );
     }
-    consume(TokenType.En);
 
-    return { type: "ForStatement", initialization, condition, increment, body };
-  }
+    // Expect the `to` keyword for the upper bound
+    if (peek().type !== TokenType.Identifier || peek().value !== "to") {
+        throw new CompileError(
+            `Expected 'to' keyword in 'for' loop after initialization, got '${peek().value}'`,
+            peek().line,
+            peek().column
+        );
+    }
+    consume(); // Consume the 'to' keyword
+
+    // Parse the upper bound expression
+    const upperBound = parseExpression();
+
+    // Handle optional `step` keyword for custom increments
+    let increment: Expression;
+    if (peek().type === TokenType.Identifier && peek().value === "step") {
+        consume(); // Consume the 'step' keyword
+        increment = parseExpression(); // Parse the custom step expression
+    } else {
+        // Default increment: assume `i = i + 1`
+        const loopVar = (initialization.varName as Expression).value; // Get the loop variable
+        increment = {
+            type: "BinaryOp",
+            left: { type: "Identifier", value: loopVar },
+            operator: "+",
+            right: { type: "Literal", value: 1 },
+        };
+    }
+
+    // Expect an opening brace `{` for the loop body
+    consume(TokenType.OpenBrace);
+
+    // Parse the loop body
+    const body: Statement[] = [];
+    while (peek().type !== TokenType.CloseBrace) {
+        body.push(parseStatement());
+    }
+
+    // Expect a closing brace `}`
+    consume(TokenType.CloseBrace);
+
+    // Return the updated ForStatement AST node
+    return {
+        type: "ForStatement",
+        initialization,
+        condition: upperBound,
+        increment,
+        body,
+    };
+}
+
+
+
   function parseStatement(): Statement {
     const token = peek();
   
