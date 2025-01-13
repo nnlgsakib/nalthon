@@ -1,4 +1,4 @@
-# Nalthon - A Custom Programming Language Compiler
+# Nalthon - A Experimental Programming Language Compiler
 
 Welcome to the Nalthon repository! This project contains a compiler for the Nalthon language, a language designed with simplicity and flexibility in mind. The compiler is built in TypeScript and is capable of parsing, tokenizing, and compiling code written in Nalthon into executable programs.
 
