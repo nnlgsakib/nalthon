@@ -88,9 +88,13 @@ Feel free to fork the repository and submit pull requests. Whether it's bug fixe
 This project is open-source and available under the MIT License.
 
 Author
+
 Name: NLG
+
 GitHub: https://github.com/nnlgsakib
-Contact
+
+## Contact
+
 For any questions, feel free to reach out to me via GitHub.
 
 Happy coding! 🚀

@@ -24,7 +24,7 @@ runtimeBytecode,
 function buildABI(contractDef: ContractDefinition): { abi: ABIFunction[], constructorFn?: FunctionDefinition } {
 const abi: ABIFunction[] = [];
 let constructorFn: FunctionDefinition | undefined;
-
+ 
 for (const fn of contractDef.functions) {
 if (fn.name === "constructor") {
 constructorFn = fn;
