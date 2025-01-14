@@ -75,40 +75,17 @@ export function parse(source: string): Program {
 }
 function parseStateVar(): VariableDeclaration {
   const nameToken = consume(TokenType.Identifier); // Variable name
-
   consume(TokenType.Colon); // Consume ':'
 
-  // Recursive function to parse mappings and arrays
-  function parseType(): string {
-      let typeName = consume(TokenType.Identifier).value; // Base type (e.g., 'address')
-
-      // Check for array syntax (e.g., 'address[]')
-      while (peek().type === TokenType.OpenBracket) {
-          consume(TokenType.OpenBracket); // Consume '['
-          if (peek().type === TokenType.CloseBracket) {
-              consume(TokenType.CloseBracket); // Consume ']'
-              typeName += "[]"; // Append array notation
-          } else {
-              throw new CompileError(
-                  `Expected ']', got '${peek().type}' at line ${peek().line}, column ${peek().column}`,
-                  peek().line,
-                  peek().column
-              );
-          }
-      }
-
-      return typeName;
-  }
-
-  const typeName = parseType(); // Get the complete type (including array/mapping)
+  const typeName = parseType(); // Parse the type (including mapping or array syntax)
 
   let storageLocation: "memory" | "storage" | undefined;
   if (peek().type === TokenType.Memory) {
-      consume(TokenType.Memory);
-      storageLocation = "memory";
+    consume(TokenType.Memory);
+    storageLocation = "memory";
   } else if (peek().type === TokenType.Storage) {
-      consume(TokenType.Storage);
-      storageLocation = "storage";
+    consume(TokenType.Storage);
+    storageLocation = "storage";
   }
 
   if (peek().type === TokenType.Semicolon) consume(TokenType.Semicolon);
@@ -116,6 +93,32 @@ function parseStateVar(): VariableDeclaration {
   return { name: nameToken.value, typeName, storageLocation };
 }
 
+function parseType(): string {
+  // Check if the type is a mapping
+  if (peek().type === TokenType.Identifier && peek().value === "mapping") {
+    return parseMappingType(); // Delegate to parseMappingType
+  }
+
+  // Parse the base type (e.g., 'address', 'uint256', etc.)
+  let typeName = consume(TokenType.Identifier).value;
+
+  // Check for array syntax (e.g., 'address[]')
+  while (peek().type === TokenType.OpenBracket) {
+    consume(TokenType.OpenBracket); // Consume '['
+    if (peek().type === TokenType.CloseBracket) {
+      consume(TokenType.CloseBracket); // Consume ']'
+      typeName += "[]"; // Append array notation
+    } else {
+      throw new CompileError(
+        `Expected ']', got '${peek().type}' at line ${peek().line}, column ${peek().column}`,
+        peek().line,
+        peek().column
+      );
+    }
+  }
+
+  return typeName;
+}
   
   
 
@@ -250,47 +253,37 @@ function parseStruct(): StructDefinition {
       fields,
   };
 }
-
 function parseMappingType(): string {
   consume(TokenType.Identifier); // Consume 'mapping'
-  consume(TokenType.OpenParen);
+  consume(TokenType.OpenParen);  // Consume '('
 
-  // Parse key type (e.g., 'address')
+  // Parse the key type (e.g., 'address')
   const keyType = consume(TokenType.Identifier).value;
 
-  // Consume the arrow token
-  consume(TokenType.Arrow);
+  // Ensure the arrow '->' is present
+  if (peek().type !== TokenType.Arrow) {
+    throw new CompileError(
+      `Expected '->', got '${peek().value}' at line ${peek().line}, column ${peek().column}`,
+      peek().line,
+      peek().column
+    );
+  }
+  consume(TokenType.Arrow); // Consume the '->'
 
-  // Parse value type
+  // Parse the value type
   let valueType: string;
   if (peek().type === TokenType.Identifier && peek().value === "mapping") {
-      valueType = parseMappingType(); // Handle nested mappings
+    valueType = parseMappingType(); // Recursively parse nested mappings
   } else {
-      valueType = consume(TokenType.Identifier).value;
+    valueType = consume(TokenType.Identifier).value; // Simple type (e.g., uint256)
   }
 
-  consume(TokenType.CloseParen);
+  consume(TokenType.CloseParen); // Consume ')'
+
   return `mapping(${keyType} -> ${valueType})`;
 }
 
-function parseType(): string {
-  if (peek().type === TokenType.Identifier) {
-      const typeName = consume(TokenType.Identifier).value;
 
-      // Check for mapping and parse it
-      if (typeName === "mapping") {
-          return parseMappingType();
-      }
-
-      return typeName;
-  }
-
-  throw new CompileError(
-      `Expected a type identifier, but got '${peek().value}'`,
-      peek().line,
-      peek().column
-  );
-}
 
 
 
@@ -584,13 +577,14 @@ function parseStatement(): Statement {
   }
 
   function parseUnaryExpression(): Expression {
-    if (peek().type === TokenType.Minus || peek().type === TokenType.Not) {
-      const operator = consume().value;
-      const operand = parsePrimaryExpression();
-      return { type: "UnaryOp", operator, operand };
+    if (peek().type === TokenType.Exclamation || peek().type === TokenType.Minus) {
+        const operator = consume().value; // Consume '!' or '-'
+        const operand = parseUnaryExpression(); // Recursively parse the operand
+        return { type: "UnaryOp", operator, operand };
     }
-    return parsePrimaryExpression();
-  }
+    return parsePrimaryExpression(); // If no unary operator, parse as a primary expression
+}
+
 
   function parseMultiplicativeExpression(): Expression {
     let left = parseUnaryExpression(); // Start with a unary expression
@@ -641,12 +635,12 @@ function parseStatement(): Statement {
     }
 
     if (base.type === TokenType.OpenBracket) {
-        // Handle empty or initialized arrays
+        // Handle arrays
         const elements: Expression[] = [];
         while (peek().type !== TokenType.CloseBracket) {
             elements.push(parseExpression());
             if (peek().type === TokenType.Comma) {
-                consume(TokenType.Comma); // Consume ',' between array elements
+                consume(TokenType.Comma); // Consume ',' between elements
             } else {
                 break;
             }
@@ -655,17 +649,36 @@ function parseStatement(): Statement {
         return { type: "ArrayLiteral", elements };
     }
 
+    if (base.type === TokenType.OpenBrace) {
+        // Handle empty or initialized object literals
+        const properties: { key: string; value: Expression }[] = [];
+        while (peek().type !== TokenType.CloseBrace) {
+            const key = consume(TokenType.Identifier).value;
+            consume(TokenType.Colon); // Consume ':'
+            const value = parseExpression();
+            properties.push({ key, value });
+
+            if (peek().type === TokenType.Comma) {
+                consume(TokenType.Comma); // Consume ',' between properties
+            } else {
+                break;
+            }
+        }
+        consume(TokenType.CloseBrace); // Consume '}'
+        return { type: "ObjectLiteral", properties };
+    }
+
     if (base.type === TokenType.Identifier) {
         let expression: Expression = { type: "Identifier", value: base.value };
 
-        // Handle member access, index access, or function call
+        // Handle member access, index access, or function/constructor calls
         while (
             peek().type === TokenType.Dot ||
             peek().type === TokenType.OpenBracket ||
             peek().type === TokenType.OpenParen
         ) {
             if (peek().type === TokenType.Dot) {
-                consume(TokenType.Dot); // Consume the dot operator
+                consume(TokenType.Dot); // Consume '.'
                 const member = consume(TokenType.Identifier);
                 expression = { type: "MemberAccess", object: expression, member: member.value };
             } else if (peek().type === TokenType.OpenBracket) {
@@ -679,7 +692,7 @@ function parseStatement(): Statement {
                 while (peek().type !== TokenType.CloseParen) {
                     args.push(parseExpression()); // Parse arguments
                     if (peek().type === TokenType.Comma) {
-                        consume(TokenType.Comma); // Consume ',' if more arguments
+                        consume(TokenType.Comma); // Consume ',' between arguments
                     } else {
                         break;
                     }
@@ -704,6 +717,7 @@ function parseStatement(): Statement {
         base.column
     );
 }
+
 
 
   

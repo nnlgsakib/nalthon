@@ -116,7 +116,7 @@ export interface MemberAccess {
 }
 
 export interface Expression {
-  type: "Literal" | "Identifier" | "BinaryOp" | "UnaryOp" | "FunctionCall" | "MemberAccess" | "TernaryOp"| "BitwiseOp"|"LogicalOp" | "IndexAccess" | "ExpressionStatement" | "Tuple" | "ArrayLiteral";
+  type: "ObjectLiteral"|"Literal" | "Identifier" | "BinaryOp" | "UnaryOp" | "FunctionCall" | "MemberAccess" | "TernaryOp"| "BitwiseOp"|"LogicalOp" | "IndexAccess" | "ExpressionStatement" | "Tuple" | "ArrayLiteral";
   value?: any;
   left?: Expression;
   operator?: string;
@@ -131,6 +131,7 @@ export interface Expression {
   index?: Expression;
   expression?: Expression;
   elements?: Expression[]; // Add this for tuple elements
+  properties?: { key: string; value: Expression }[]; // Add this for object literals
 
 }
 export interface Parameter {
@@ -150,3 +151,9 @@ export interface StructField {
   name: string;
   type: string;
 }
+
+export interface ObjectLiteral {
+  type: "ObjectLiteral";
+  properties: { key: string; value: Expression }[];
+}
+

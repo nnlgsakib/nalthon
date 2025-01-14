@@ -1,5 +1,6 @@
 import { Token, TokenType } from "./types";
 import { CompileError } from "../utils/errors";
+import * as fs from 'fs';
 
 // Recognized keywords in Nalthon
 const KEYWORDS = new Map<string, TokenType>([
@@ -226,6 +227,10 @@ export function tokenize(source: string): Token[] {
 
     throw new CompileError(`Unexpected character '${char}' at line ${line}, column ${col}`, line, col);
   }
+  const tokenString = JSON.stringify(tokens, null, 2);
+
+  // Save tokens to a file
+  fs.writeFileSync('tokens.txt', tokenString, 'utf8');
 
   tokens.push({ type: TokenType.EOF, value: "", line, column: col });
   return tokens;

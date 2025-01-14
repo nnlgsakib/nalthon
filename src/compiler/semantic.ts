@@ -241,6 +241,15 @@ function checkExpression(expr: Expression): void {
           }
           expr.elements.forEach(element => checkExpression(element)); // Check all elements in the array
           break;
+          case "ObjectLiteral":
+            if (!expr.properties) {
+              throw new CompileError(`Invalid object literal`, 0, 0);
+            }
+            expr.properties.forEach(property => {
+              checkExpression(property.value); // Check the value of each property
+            });
+            break;
+        
     default:
       throw new CompileError(`Unsupported expression type: '${expr.type}'`, 0, 0);
   }
