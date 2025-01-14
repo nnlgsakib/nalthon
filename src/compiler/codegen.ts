@@ -3,6 +3,7 @@ import { Program, ContractDefinition, FunctionDefinition } from "./ast";
 import { CompiledContract, ABIFunction } from "./types";
 import { getOpcodeHex } from "./opcodes";
 import keccak256 from "keccak";
+import saveContractInfo from "../utils/save_contract_info";
 
 /**
  * Compile a program into multiple compiled contracts.
@@ -19,6 +20,11 @@ function compileContract(contractDef: ContractDefinition): CompiledContract {
   const runtimeBytecode = generateRuntimeBytecode(contractDef);
   const creationBytecode = generateCreationBytecode(runtimeBytecode, constructorFn);
 
+  saveContractInfo(
+    abi,
+    creationBytecode,
+    `./artifacts/contract_info/${contractDef.name.toLowerCase()}`
+  );
   return {
     contractName: contractDef.name,
     abi,

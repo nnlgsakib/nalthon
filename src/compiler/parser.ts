@@ -1,4 +1,3 @@
-
 import { tokenize } from "./lexer";
 import { Token, TokenType } from "./types";
 import {
@@ -19,6 +18,10 @@ import {
   StructField,
 } from "./ast";
 import { CompileError } from "../utils/errors";
+import { saveAstToFile } from "../utils/ast_writter";
+
+
+
 
 export function parse(source: string): Program {
   const tokens = tokenize(source);
@@ -46,6 +49,9 @@ export function parse(source: string): Program {
   while (peek().type !== TokenType.EOF) {
     program.contracts.push(parseContract());
   }
+  
+    saveAstToFile(program);
+  
 
   return program;
 
